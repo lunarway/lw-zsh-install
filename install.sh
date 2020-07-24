@@ -55,12 +55,12 @@ cp ~/.zplug/repos/lunarway/lw-zsh/.zshrc.example ~/.zshrc
 sed -i -- "s/your-initials@lunarway.com/$tmp/g" ~/.zshrc
 echo ""
 echo "---------------------------------------------------------------------------------------------------------"
-echo "Lunar Way's default zsh is installed"
+echo "Lunar's default zsh is installed"
 echo ""
 echo "To re-apply your customized alias' and more copy stuff back from $backup to ~/.zshrc."
 echo ""
-echo "Follow font and iterm profile setup at https://github.com/lunarway/lw-zsh"
+echo "Follow font and iTerm profile setup at https://github.com/lunarway/lw-zsh"
 echo ""
-echo "Close this terminal and re-open a new one"
+echo "Close this terminal and open a new one"
 echo "---------------------------------------------------------------------------------------------------------"
 echo
