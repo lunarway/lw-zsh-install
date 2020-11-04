@@ -71,10 +71,10 @@ sed -i '' "s/your-initials@lunarway.com/$email/g" $HOME/.zshrc
 
 lwPath="~/lunar"
 vared -p "Please specify the path to where all Lunar repositories will be stored: " -c lwPath
-sed -i '' 's#LW_PATH=.*#LW_PATH='"$lwPath"'#g' /Users/bjornhaldsorensen/.zplug/repos/lunarway/lw-zsh/.zshrc.example
+sed -i '' 's#LW_PATH=.*#LW_PATH='"$lwPath"'#g' $HOME/.zshrc
 goPath="~/go"
 vared -p "Please specify the Go path: " -c goPath
-sed -i '' 's#GOPATH=.*#GOPATH='"$goPath"'#g' /Users/bjornhaldsorensen/.zplug/repos/lunarway/lw-zsh/.zshrc.example
+sed -i '' 's#GOPATH=.*#GOPATH='"$goPath"'#g' $HOME/.zshrc
 
 echo ""
 echo "---------------------------------------------------------------------------------------------------------"
