@@ -64,10 +64,17 @@ fi
 
 echo ""
 echo "Generating new .zshrc"
-vared -p "Please specify your Lunar email: " -c tmp
 cp $HOME/.zplug/repos/lunarway/lw-zsh/.zshrc.example $HOME/.zshrc
 
-sed -i '' "s/your-initials@lunarway.com/$tmp/g" $HOME/.zshrc
+vared -p "Please specify your Lunar email: " -c email
+sed -i '' "s/your-initials@lunarway.com/$email/g" $HOME/.zshrc
+
+lwPath="~/lunar"
+vared -p "Please specify the path to where all Lunar repositories will be stored: " -c lwPath
+sed -i '' 's#LW_PATH=.*#LW_PATH='"$lwPath"'#g' $HOME/.zshrc
+goPath="~/go"
+vared -p "Please specify the Go path: " -c goPath
+sed -i '' 's#GOPATH=.*#GOPATH='"$goPath"'#g' $HOME/.zshrc
 
 echo ""
 echo "---------------------------------------------------------------------------------------------------------"
