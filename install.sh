@@ -28,27 +28,65 @@ fi
 if [ -z "$ZPLUG_HOME" ]; then
     echo "Installing zplug"
     curl -sL --proto-redir -all,https https://raw.githubusercontent.com/zplug/installer/master/installer.zsh | zsh
+    if [ $? != 0 ]; then
+        echo "Failed to install zplug"
+        return
+    fi
 else
     echo "Updating zplug"
-    (cd $ZPLUG_HOME && git pull --ff-only)
+    (cd $ZPLUG_HOME && git reset --hard && git pull --ff-only)
+    if [ $? != 0 ]; then
+        echo "Failed to update zplug installation"
+        return
+    fi
 fi
+
+# installation of zplug can be delayed so we wait here until we are sure the
+# init.zsh file exists
+while [ ! -f $HOME/.zplug/init.zsh ]; do
+    sleep 1
+done
 
 echo ""
 echo "Loading zplug"
 source $HOME/.zplug/init.zsh
+if [ $? != 0 ]; then
+    echo "Failed to load"
+    return
+fi
 echo ""
 echo "Installing lw-zsh"
+
 ZPLUG_PROTOCOL=ssh
 export LC_ALL= && export LANG=en_US.UTF-8
+
 zplug "lunarway/lw-zsh"
-if [ ! -d $HOME/.zplug/repos/lunarway/lw-zsh ] && [ ! -d $HOME/.zplug/repos/lunarway/lw-zsh ]; then
+if [ $? != 0 ]; then
+    echo "Failed to register lw-zsh zplug package"
+    return
+fi
+
+if [ ! -d $HOME/.zplug/repos/lunarway/lw-zsh ]; then
     zplug install
+    if [ $? != 0 ]; then
+        echo "Failed to install zplug packages"
+        return
+    fi
 else
     zplug update lunarway/lw-zsh
+    if [ $? != 0 ]; then
+        echo "Failed to update lw-zsh zplug package"
+        return
+    fi
 fi
 echo ""
 echo "Installing default plugins"
 source $HOME/.zplug/repos/lunarway/lw-zsh/default-plugins.zsh
+if [ $? != 0 ]; then
+    echo "Failed to register lw-zsh default packages"
+    return
+fi
+
 zplug install
 
 # Backup existing .zshrc if it exists
