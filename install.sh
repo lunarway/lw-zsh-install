@@ -1,16 +1,5 @@
 #!/usr/bin/env zsh
 
-echo -n "Checking BitBucket access"
-bitbucket_access=$(ssh -T git@bitbucket.org 2>&1)
-if [[ $bitbucket_access =~ "^logged in as" ]]; then
-    echo " - OK"
-else
-    echo ""
-    echo "-------------------------------------------------------"
-    echo "No access to BitBucket detected. If you don't need it, just ignore this. Otherwise fix it and try again."
-    echo "Consider 'ssh-add -K' or updating your .ssh/config like described at https://nerderati.com/2011/03/17/simplify-your-life-with-an-ssh-config-file/"
-    echo "-------------------------------------------------------"
-fi
 echo -n "Checking GitHub access"
 github_access=$(ssh -T git@github.com 2>&1)
 if [[ $github_access =~ "^Hi " ]]; then
