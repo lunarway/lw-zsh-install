@@ -1,0 +1,5 @@
+plan: false
+vars:
+  service: lw-zsh-install
+  squad: aura
+  domain: developer-productivity
