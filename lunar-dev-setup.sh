@@ -309,11 +309,22 @@ else
     BREW_BIN="/usr/local/bin"
   fi
 
-  if PATH="${BREW_BIN}:${PATH}" zsh /tmp/install-lw-zsh.zsh; then
+  # Unset ZPLUG_HOME so the installer takes the fresh "install" path instead
+  # of the "update" path. The update path does `cd $ZPLUG_HOME` which fails
+  # if ~/.zplug doesn't exist (and the installer returns 0 despite failing,
+  # because `echo "Failed..."` sets $? to 0 before `return`).
+  PATH="${BREW_BIN}:${PATH}" ZPLUG_HOME="" zsh /tmp/install-lw-zsh.zsh
+
+  # Don't trust the exit code — the upstream installer returns 0 on failure.
+  # Verify that lw-zsh was actually installed.
+  if [[ -d "$HOME/.zplug/repos/lunarway/lw-zsh" ]]; then
     ok "lw-zsh installed"
   else
-    warn "lw-zsh installer had issues. You may need to open a new terminal and retry:"
+    fail "lw-zsh installation failed"
+    echo ""
+    echo "  Try manually in a new terminal:"
     echo "  curl -sL -o install-lw-zsh.zsh https://raw.githubusercontent.com/lunarway/lw-zsh-install/master/install.sh && zsh install-lw-zsh.zsh"
+    echo ""
   fi
 
   rm -f /tmp/install-lw-zsh.zsh
