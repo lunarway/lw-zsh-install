@@ -220,7 +220,11 @@ else
   info "Authenticating to GitHub..."
   info "This will open your browser. Authorize the app when prompted."
   echo ""
-  gh auth login --hostname github.com --git-protocol ssh --skip-ssh-key --web
+  gh auth login --hostname github.com --git-protocol ssh --skip-ssh-key --web || {
+    fail "GitHub CLI authentication failed or was cancelled."
+    echo "  Re-run this script to try again."
+    exit 1
+  }
   ok "GitHub CLI authenticated"
 fi
 
@@ -237,7 +241,7 @@ step "Phase 5/10 — Upload SSH key to GitHub"
 KEY_FINGERPRINT=$(ssh-keygen -lf "${SSH_KEY_PATH}.pub" 2>/dev/null | awk '{print $2}')
 EXISTING_AUTH_KEYS=$(gh ssh-key list 2>/dev/null || echo "")
 
-if echo "$EXISTING_AUTH_KEYS" | grep -q "$KEY_FINGERPRINT"; then
+if [[ -n "$KEY_FINGERPRINT" ]] && echo "$EXISTING_AUTH_KEYS" | grep -q "$KEY_FINGERPRINT"; then
   ok "SSH key already on GitHub"
 else
   info "Uploading SSH key as authentication key..."
