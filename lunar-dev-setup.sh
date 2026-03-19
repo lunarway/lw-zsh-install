@@ -287,6 +287,22 @@ else
     rm -rf "$HOME/.zplug"
   fi
 
+  # Install zplug directly via git clone if needed.
+  # The upstream zplug installer (zplug/installer/master/installer.zsh) is flaky
+  # and fails silently in non-interactive shells. Cloning directly is reliable.
+  if [[ ! -f "$HOME/.zplug/init.zsh" ]]; then
+    info "Installing zplug..."
+    git clone https://github.com/zplug/zplug.git "$HOME/.zplug" 2>&1
+    if [[ -f "$HOME/.zplug/init.zsh" ]]; then
+      ok "zplug installed"
+    else
+      fail "Failed to install zplug"
+      echo "  Try manually: git clone https://github.com/zplug/zplug.git ~/.zplug"
+    fi
+  else
+    ok "zplug already installed"
+  fi
+
   info "Downloading lw-zsh installer..."
   curl -sL -o /tmp/install-lw-zsh.zsh \
     https://raw.githubusercontent.com/lunarway/lw-zsh-install/master/install.sh
@@ -300,8 +316,8 @@ else
   sed -i '' '/vared -p "Please specify the Go path: " -c goPath/d' /tmp/install-lw-zsh.zsh
 
   info "Running lw-zsh installer (this installs shuttle, hamctl, kubectl, etc.)..."
-  # Explicitly pass Homebrew's PATH so git is available when zplug clones itself.
-  # Without this, subshells on Apple Silicon may not find /opt/homebrew/bin/git.
+  # Explicitly pass Homebrew's PATH and TERM so git and tput work in subshells.
+  # Set ZPLUG_HOME so the installer takes the "update" path (zplug already cloned above).
   BREW_BIN=""
   if [[ -f /opt/homebrew/bin/brew ]]; then
     BREW_BIN="/opt/homebrew/bin:/opt/homebrew/sbin"
@@ -309,11 +325,7 @@ else
     BREW_BIN="/usr/local/bin"
   fi
 
-  # Unset ZPLUG_HOME so the installer takes the fresh "install" path instead
-  # of the "update" path. The update path does `cd $ZPLUG_HOME` which fails
-  # if ~/.zplug doesn't exist (and the installer returns 0 despite failing,
-  # because `echo "Failed..."` sets $? to 0 before `return`).
-  PATH="${BREW_BIN}:${PATH}" ZPLUG_HOME="" zsh /tmp/install-lw-zsh.zsh
+  PATH="${BREW_BIN}:${PATH}" TERM="${TERM:-xterm-256color}" ZPLUG_HOME="$HOME/.zplug" zsh /tmp/install-lw-zsh.zsh
 
   # Don't trust the exit code — the upstream installer returns 0 on failure.
   # Verify that lw-zsh was actually installed.
