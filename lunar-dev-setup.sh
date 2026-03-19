@@ -189,6 +189,26 @@ fi
 # Add key to local agent
 ssh-add "$SSH_KEY_PATH" 2>/dev/null || true
 
+# 1Password agent.toml — enable SSH keys from shared vaults (e.g. Employee)
+if $HAS_1PASSWORD_AGENT; then
+  AGENT_TOML="$HOME/.config/1Password/ssh/agent.toml"
+  if [[ -f "$AGENT_TOML" ]]; then
+    ok "1Password agent config already exists at $AGENT_TOML"
+  else
+    mkdir -p "$(dirname "$AGENT_TOML")"
+    cat > "$AGENT_TOML" <<'TOMLEOF'
+# Allow SSH keys from shared 1Password vaults to be used by the SSH agent.
+# Without this, only keys in Personal/Private vaults are auto-discovered.
+# See: https://developer.1password.com/docs/ssh/agent/config/
+
+[[ssh-keys]]
+vault = "Employee"
+TOMLEOF
+    ok "Created $AGENT_TOML (enables SSH keys from Employee vault)"
+    info "Restart 1Password for this to take effect."
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 # Phase 4 — GitHub CLI authentication
 # ---------------------------------------------------------------------------
