@@ -75,7 +75,7 @@ ok "Name:  $LUNAR_NAME"
 # ---------------------------------------------------------------------------
 # Phase 1 — System prerequisites
 # ---------------------------------------------------------------------------
-step "Phase 1/9 — System prerequisites"
+step "Phase 1/10 — System prerequisites"
 
 # 1a. Rosetta 2 (Apple Silicon only)
 if [[ "$(uname -m)" == "arm64" ]]; then
@@ -114,7 +114,7 @@ fi
 # ---------------------------------------------------------------------------
 # Phase 2 — Core tools
 # ---------------------------------------------------------------------------
-step "Phase 2/9 — Installing core tools"
+step "Phase 2/10 — Installing core tools"
 
 for pkg in git gh go; do
   if command -v "$pkg" &>/dev/null; then
@@ -129,7 +129,7 @@ done
 # ---------------------------------------------------------------------------
 # Phase 3 — SSH key setup
 # ---------------------------------------------------------------------------
-step "Phase 3/9 — SSH key setup"
+step "Phase 3/10 — SSH key setup"
 
 mkdir -p ~/.ssh
 chmod 700 ~/.ssh
@@ -192,7 +192,7 @@ ssh-add "$SSH_KEY_PATH" 2>/dev/null || true
 # ---------------------------------------------------------------------------
 # Phase 4 — GitHub CLI authentication
 # ---------------------------------------------------------------------------
-step "Phase 4/9 — GitHub CLI authentication"
+step "Phase 4/10 — GitHub CLI authentication"
 
 if gh auth status &>/dev/null; then
   ok "GitHub CLI already authenticated"
@@ -211,7 +211,7 @@ ok "Git configured to use SSH for GitHub"
 # ---------------------------------------------------------------------------
 # Phase 5 — Upload SSH key to GitHub
 # ---------------------------------------------------------------------------
-step "Phase 5/9 — Upload SSH key to GitHub"
+step "Phase 5/10 — Upload SSH key to GitHub"
 
 # Check if our key is already on GitHub
 EXISTING_KEYS=$(gh ssh-key list 2>/dev/null || echo "")
@@ -275,7 +275,7 @@ fi
 # ---------------------------------------------------------------------------
 # Phase 6 — lw-zsh (Lunar terminal setup)
 # ---------------------------------------------------------------------------
-step "Phase 6/9 — Installing lw-zsh (Lunar terminal setup)"
+step "Phase 6/10 — Installing lw-zsh (Lunar terminal setup)"
 
 if [[ -d "$HOME/.zplug/repos/lunarway/lw-zsh" ]]; then
   ok "lw-zsh already installed"
@@ -339,7 +339,7 @@ mkdir -p "$LW_PATH" "$GOPATH"
 # ---------------------------------------------------------------------------
 # Phase 7 — Git identity + signed commits
 # ---------------------------------------------------------------------------
-step "Phase 7/9 — Git identity and signed commits"
+step "Phase 7/10 — Git identity and signed commits"
 
 GITCONFIG_LW="$HOME/.gitconfig_lw"
 GITCONFIG="$HOME/.gitconfig"
@@ -376,7 +376,7 @@ fi
 # ---------------------------------------------------------------------------
 # Phase 8 — hamctl login
 # ---------------------------------------------------------------------------
-step "Phase 8/9 — hamctl login (Okta authentication)"
+step "Phase 8/10 — hamctl login (Okta authentication)"
 
 echo ""
 echo "  hamctl authenticates via Okta using a browser-based device flow."
@@ -401,9 +401,46 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Phase 9 — Final verification & summary
+# Phase 9 — AI agent skills (lunarctl agent)
 # ---------------------------------------------------------------------------
-step "Phase 9/9 — Verification"
+step "Phase 9/10 — AI agent skills"
+
+# lunarctl needs LUNARCTL_REGISTRY to find extensions
+export LUNARCTL_REGISTRY="$HOME/.lunarctl/registry"
+
+# Try to get lunarctl in PATH
+LUNARCTL_BIN=""
+if command -v lunarctl &>/dev/null; then
+  LUNARCTL_BIN="lunarctl"
+elif [[ -x "$GOPATH/bin/lunarctl" ]]; then
+  LUNARCTL_BIN="$GOPATH/bin/lunarctl"
+fi
+
+if [[ -n "$LUNARCTL_BIN" ]]; then
+  # Run doctor to check prerequisites
+  info "Running lunarctl agent skills doctor..."
+  if $LUNARCTL_BIN agent skills doctor 2>&1; then
+    ok "AI agent skills prerequisites OK"
+  else
+    warn "Some prerequisites missing — run 'lunarctl agent skills doctor' in a new terminal"
+  fi
+
+  echo ""
+  info "Launching AI skills picker — choose which skills to enable for your editors:"
+  echo ""
+  $LUNARCTL_BIN agent skills select 2>&1 || {
+    warn "Skills selection skipped or failed."
+    manual "Run 'lunarctl agent skills select' in a new terminal later."
+  }
+else
+  warn "lunarctl not in PATH yet (needs a new terminal after lw-zsh install)."
+  manual "Open a new terminal and run: lunarctl agent skills select"
+fi
+
+# ---------------------------------------------------------------------------
+# Phase 10 — Final verification & summary
+# ---------------------------------------------------------------------------
+step "Phase 10/10 — Verification"
 
 PASS=0
 TOTAL=0
