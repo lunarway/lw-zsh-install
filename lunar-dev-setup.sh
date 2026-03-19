@@ -280,6 +280,13 @@ step "Phase 6/9 — Installing lw-zsh (Lunar terminal setup)"
 if [[ -d "$HOME/.zplug/repos/lunarway/lw-zsh" ]]; then
   ok "lw-zsh already installed"
 else
+  # Clean up a partial zplug install (from a previous failed run) so zplug
+  # can clone itself fresh. zplug refuses to install if ~/.zplug already exists.
+  if [[ -d "$HOME/.zplug" && ! -f "$HOME/.zplug/init.zsh" ]]; then
+    warn "Removing incomplete ~/.zplug from a previous run..."
+    rm -rf "$HOME/.zplug"
+  fi
+
   info "Downloading lw-zsh installer..."
   curl -sL -o /tmp/install-lw-zsh.zsh \
     https://raw.githubusercontent.com/lunarway/lw-zsh-install/master/install.sh
@@ -293,7 +300,16 @@ else
   sed -i '' '/vared -p "Please specify the Go path: " -c goPath/d' /tmp/install-lw-zsh.zsh
 
   info "Running lw-zsh installer (this installs shuttle, hamctl, kubectl, etc.)..."
-  if zsh /tmp/install-lw-zsh.zsh; then
+  # Explicitly pass Homebrew's PATH so git is available when zplug clones itself.
+  # Without this, subshells on Apple Silicon may not find /opt/homebrew/bin/git.
+  BREW_BIN=""
+  if [[ -f /opt/homebrew/bin/brew ]]; then
+    BREW_BIN="/opt/homebrew/bin:/opt/homebrew/sbin"
+  elif [[ -f /usr/local/bin/brew ]]; then
+    BREW_BIN="/usr/local/bin"
+  fi
+
+  if PATH="${BREW_BIN}:${PATH}" zsh /tmp/install-lw-zsh.zsh; then
     ok "lw-zsh installed"
   else
     warn "lw-zsh installer had issues. You may need to open a new terminal and retry:"
