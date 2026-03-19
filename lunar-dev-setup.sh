@@ -233,10 +233,11 @@ ok "Git configured to use SSH for GitHub"
 # ---------------------------------------------------------------------------
 step "Phase 5/10 — Upload SSH key to GitHub"
 
-# Check if our key is already on GitHub
-EXISTING_KEYS=$(gh ssh-key list 2>/dev/null || echo "")
+# Check if our specific key is already on GitHub (match by fingerprint, not title)
+KEY_FINGERPRINT=$(ssh-keygen -lf "${SSH_KEY_PATH}.pub" 2>/dev/null | awk '{print $2}')
+EXISTING_AUTH_KEYS=$(gh ssh-key list 2>/dev/null || echo "")
 
-if echo "$EXISTING_KEYS" | grep -q "Lunar"; then
+if echo "$EXISTING_AUTH_KEYS" | grep -q "$KEY_FINGERPRINT"; then
   ok "SSH key already on GitHub"
 else
   info "Uploading SSH key as authentication key..."
@@ -312,7 +313,7 @@ else
   # and fails silently in non-interactive shells. Cloning directly is reliable.
   if [[ ! -f "$HOME/.zplug/init.zsh" ]]; then
     info "Installing zplug..."
-    git clone https://github.com/zplug/zplug.git "$HOME/.zplug" 2>&1
+    git clone https://github.com/zplug/zplug.git "$HOME/.zplug" 2>&1 || true
     if [[ -f "$HOME/.zplug/init.zsh" ]]; then
       ok "zplug installed"
     else
@@ -330,7 +331,9 @@ else
   # Patch the installer to skip interactive prompts (vared can't read from pipes)
   # The installer uses vared for 3 inputs: email, LW_PATH, GOPATH
   # We replace the vared calls with direct variable assignments
-  sed -i '' "s|vared -p \"Please specify your Lunar email: \" -c email|email=\"${LUNAR_EMAIL}\"|" /tmp/install-lw-zsh.zsh
+  # Escape sed metacharacters in email (& and \ are special in sed replacement)
+  ESCAPED_EMAIL=$(printf '%s\n' "$LUNAR_EMAIL" | sed 's/[&\\/]/\\&/g')
+  sed -i '' "s|vared -p \"Please specify your Lunar email: \" -c email|email=\"${ESCAPED_EMAIL}\"|" /tmp/install-lw-zsh.zsh
   # LW_PATH and GOPATH are already set to defaults before vared; just remove the vared lines
   sed -i '' '/vared -p "Please specify the path to where all Lunar repositories will be stored: " -c lwPath/d' /tmp/install-lw-zsh.zsh
   sed -i '' '/vared -p "Please specify the Go path: " -c goPath/d' /tmp/install-lw-zsh.zsh
@@ -345,7 +348,7 @@ else
     BREW_BIN="/usr/local/bin"
   fi
 
-  PATH="${BREW_BIN}:${PATH}" TERM="${TERM:-xterm-256color}" ZPLUG_HOME="$HOME/.zplug" zsh /tmp/install-lw-zsh.zsh
+  PATH="${BREW_BIN}:${PATH}" TERM="${TERM:-xterm-256color}" ZPLUG_HOME="$HOME/.zplug" zsh /tmp/install-lw-zsh.zsh || true
 
   # Don't trust the exit code — the upstream installer returns 0 on failure.
   # Verify that lw-zsh was actually installed.
@@ -416,11 +419,8 @@ echo "  This step ${BOLD}cannot be automated${NC} — it will open your browser.
 echo "  Just click '${BOLD}Submit${NC}' when the Okta page opens."
 echo ""
 
-# Try to source lw-zsh to get hamctl in PATH
-if [[ -f "$HOME/.zshrc" ]]; then
-  # Source minimally to get PATH set up
-  export PATH="$GOPATH/bin:$HOME/.zplug/repos/lunarway/lw-zsh/bin:$PATH"
-fi
+# Add lw-zsh bin to PATH for this session
+export PATH="$GOPATH/bin:$HOME/.zplug/repos/lunarway/lw-zsh/bin:$PATH"
 
 if command -v hamctl &>/dev/null; then
   hamctl login || {
