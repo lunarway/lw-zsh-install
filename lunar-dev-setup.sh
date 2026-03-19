@@ -135,7 +135,6 @@ mkdir -p ~/.ssh
 chmod 700 ~/.ssh
 
 SSH_KEY_PATH="$HOME/.ssh/github"
-SSH_KEY_GENERATED=false
 
 if [[ -f "$SSH_KEY_PATH" ]]; then
   ok "SSH key already exists at $SSH_KEY_PATH"
@@ -144,7 +143,6 @@ else
   info "(No passphrase — required for headless Docker builds with shuttle)"
   ssh-keygen -t rsa -b 4096 -m pem -f "$SSH_KEY_PATH" -N "" -C "$LUNAR_EMAIL"
   ok "SSH key generated"
-  SSH_KEY_GENERATED=true
 fi
 
 # SSH config — support both traditional key AND 1Password agent
@@ -161,7 +159,8 @@ if [[ -f ~/.ssh/config ]] && grep -q "Host github.com" ~/.ssh/config; then
   ok "SSH config for github.com already exists"
 else
   if $HAS_1PASSWORD_AGENT; then
-    cat > ~/.ssh/config <<SSHEOF
+    cat >> ~/.ssh/config <<SSHEOF
+
 # 1Password SSH agent for day-to-day terminal use (recommended)
 Host *
   IdentityAgent "$ONEPASSWORD_AGENT"
@@ -172,16 +171,17 @@ Host github.com
   IdentityFile $SSH_KEY_PATH
   ForwardAgent yes
 SSHEOF
-    ok "SSH config created (1Password agent + local key fallback)"
+    ok "SSH config updated (1Password agent + local key fallback)"
   else
-    cat > ~/.ssh/config <<SSHEOF
+    cat >> ~/.ssh/config <<SSHEOF
+
 Host github.com
   IdentityFile $SSH_KEY_PATH
   ForwardAgent yes
   UseKeychain yes
   AddKeysToAgent yes
 SSHEOF
-    ok "SSH config created (local key)"
+    ok "SSH config updated (local key)"
   fi
   chmod 600 ~/.ssh/config
 fi
@@ -229,40 +229,47 @@ else
 fi
 
 # --- SSO Authorization (CANNOT be automated) ---
-echo ""
-echo "  ${RED}${BOLD}ACTION REQUIRED — Authorize your SSH keys for SAML SSO${NC}"
-echo ""
-echo "  GitHub requires you to authorize SSH keys for the lunarway org."
-echo "  This step cannot be automated and must be done in your browser."
-echo ""
-echo "  1. Open: ${BLUE}https://github.com/settings/keys${NC}"
-echo "  2. Find your '${BOLD}Lunar Dev Key${NC}' entries (auth + signing)"
-echo "  3. Click '${BOLD}Configure SSO${NC}' next to each key"
-echo "  4. Click '${BOLD}Authorize${NC}' next to '${BOLD}lunarway${NC}'"
-echo "  5. Do this for BOTH the authentication key AND the signing key"
-echo ""
-
-# Open the page for them
-open "https://github.com/settings/keys" 2>/dev/null || true
-
-pause_for_user
-
-# Verify SSH access
-info "Verifying SSH access to GitHub..."
-SSH_TEST=$(ssh -T git@github.com 2>&1 || true)
-if [[ "$SSH_TEST" =~ "^Hi " ]]; then
-  GITHUB_USER=$(echo "$SSH_TEST" | sed 's/Hi \(.*\)!.*/\1/')
-  ok "SSH works — authenticated as $GITHUB_USER"
+# Skip if SSH already works (keys already authorized from a previous run)
+SSH_PRE_CHECK=$(ssh -T git@github.com 2>&1 || true)
+if [[ "$SSH_PRE_CHECK" =~ "^Hi " ]]; then
+  GITHUB_USER=$(echo "$SSH_PRE_CHECK" | sed 's/Hi \(.*\)!.*/\1/')
+  ok "SSH already works — authenticated as $GITHUB_USER, skipping SSO step"
 else
-  fail "SSH to GitHub failed. Output: $SSH_TEST"
   echo ""
-  echo "  Common fixes:"
-  echo "  - Did you authorize SSO for BOTH keys? (auth + signing)"
-  echo "  - Is 1Password open and unlocked? (if using 1Password SSH agent)"
-  echo "  - Try: ssh-add $SSH_KEY_PATH"
+  echo "  ${RED}${BOLD}ACTION REQUIRED — Authorize your SSH keys for SAML SSO${NC}"
   echo ""
-  echo "  You can continue and fix SSH later, or press Ctrl-C to abort."
+  echo "  GitHub requires you to authorize SSH keys for the lunarway org."
+  echo "  This step cannot be automated and must be done in your browser."
+  echo ""
+  echo "  1. Open: ${BLUE}https://github.com/settings/keys${NC}"
+  echo "  2. Find your '${BOLD}Lunar Dev Key${NC}' entries (auth + signing)"
+  echo "  3. Click '${BOLD}Configure SSO${NC}' next to each key"
+  echo "  4. Click '${BOLD}Authorize${NC}' next to '${BOLD}lunarway${NC}'"
+  echo "  5. Do this for BOTH the authentication key AND the signing key"
+  echo ""
+
+  # Open the page for them
+  open "https://github.com/settings/keys" 2>/dev/null || true
+
   pause_for_user
+
+  # Verify SSH access after user completes SSO
+  info "Verifying SSH access to GitHub..."
+  SSH_TEST=$(ssh -T git@github.com 2>&1 || true)
+  if [[ "$SSH_TEST" =~ "^Hi " ]]; then
+    GITHUB_USER=$(echo "$SSH_TEST" | sed 's/Hi \(.*\)!.*/\1/')
+    ok "SSH works — authenticated as $GITHUB_USER"
+  else
+    fail "SSH to GitHub failed. Output: $SSH_TEST"
+    echo ""
+    echo "  Common fixes:"
+    echo "  - Did you authorize SSO for BOTH keys? (auth + signing)"
+    echo "  - Is 1Password open and unlocked? (if using 1Password SSH agent)"
+    echo "  - Try: ssh-add $SSH_KEY_PATH"
+    echo ""
+    echo "  You can continue and fix SSH later, or press Ctrl-C to abort."
+    pause_for_user
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -286,13 +293,14 @@ else
   sed -i '' '/vared -p "Please specify the Go path: " -c goPath/d' /tmp/install-lw-zsh.zsh
 
   info "Running lw-zsh installer (this installs shuttle, hamctl, kubectl, etc.)..."
-  zsh /tmp/install-lw-zsh.zsh || {
+  if zsh /tmp/install-lw-zsh.zsh; then
+    ok "lw-zsh installed"
+  else
     warn "lw-zsh installer had issues. You may need to open a new terminal and retry:"
     echo "  curl -sL -o install-lw-zsh.zsh https://raw.githubusercontent.com/lunarway/lw-zsh-install/master/install.sh && zsh install-lw-zsh.zsh"
-  }
+  fi
 
   rm -f /tmp/install-lw-zsh.zsh
-  ok "lw-zsh installed"
 fi
 
 # Set env vars for the rest of this script
