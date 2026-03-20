@@ -237,20 +237,39 @@ ok "Git configured to use SSH for GitHub"
 # ---------------------------------------------------------------------------
 step "Phase 5/10 — Upload SSH key to GitHub"
 
-# Check if our specific key is already on GitHub (match by fingerprint, not title)
+# Check if our specific key is already on GitHub (match by fingerprint AND type)
 KEY_FINGERPRINT=$(ssh-keygen -lf "${SSH_KEY_PATH}.pub" 2>/dev/null | awk '{print $2}')
-EXISTING_AUTH_KEYS=$(gh ssh-key list 2>/dev/null || echo "")
+EXISTING_KEYS=$(gh ssh-key list 2>/dev/null || echo "")
 
-if [[ -n "$KEY_FINGERPRINT" ]] && echo "$EXISTING_AUTH_KEYS" | grep -q "$KEY_FINGERPRINT"; then
-  ok "SSH key already on GitHub"
+if [[ -z "$KEY_FINGERPRINT" ]]; then
+  warn "Could not read SSH public key fingerprint from ${SSH_KEY_PATH}.pub"
+  warn "Skipping key upload — generate or fix the key and re-run."
 else
-  info "Uploading SSH key as authentication key..."
-  gh ssh-key add "${SSH_KEY_PATH}.pub" --title "Lunar Dev Key" --type authentication 2>/dev/null && \
-    ok "Authentication key uploaded" || warn "Key may already exist"
+  # Check auth and signing keys separately so a partial upload is recovered
+  HAS_AUTH_KEY=false
+  HAS_SIGN_KEY=false
+  if echo "$EXISTING_KEYS" | grep -q "$KEY_FINGERPRINT.*authentication"; then
+    HAS_AUTH_KEY=true
+  fi
+  if echo "$EXISTING_KEYS" | grep -q "$KEY_FINGERPRINT.*signing"; then
+    HAS_SIGN_KEY=true
+  fi
 
-  info "Uploading SSH key as signing key..."
-  gh ssh-key add "${SSH_KEY_PATH}.pub" --title "Lunar Dev Key (signing)" --type signing 2>/dev/null && \
-    ok "Signing key uploaded" || warn "Key may already exist"
+  if $HAS_AUTH_KEY; then
+    ok "Authentication SSH key already on GitHub"
+  else
+    info "Uploading SSH key as authentication key..."
+    gh ssh-key add "${SSH_KEY_PATH}.pub" --title "Lunar Dev Key" --type authentication 2>/dev/null && \
+      ok "Authentication key uploaded" || warn "Key may already exist"
+  fi
+
+  if $HAS_SIGN_KEY; then
+    ok "Signing SSH key already on GitHub"
+  else
+    info "Uploading SSH key as signing key..."
+    gh ssh-key add "${SSH_KEY_PATH}.pub" --title "Lunar Dev Key (signing)" --type signing 2>/dev/null && \
+      ok "Signing key uploaded" || warn "Key may already exist"
+  fi
 fi
 
 # --- SSO Authorization (CANNOT be automated) ---
@@ -385,16 +404,12 @@ GITCONFIG="$HOME/.gitconfig"
 
 # Create ~/.gitconfig_lw with identity + signing config
 # (This does what lw-git-config does, PLUS sets up signed commits)
-cat > "$GITCONFIG_LW" <<GITLWEOF
-[user]
-    name = $LUNAR_NAME
-    email = $LUNAR_EMAIL
-    signingkey = ${SSH_KEY_PATH}.pub
-[commit]
-    gpgsign = true
-[gpg]
-    format = ssh
-GITLWEOF
+# Use git config --file to safely handle special characters in names/emails
+git config --file "$GITCONFIG_LW" user.name "$LUNAR_NAME"
+git config --file "$GITCONFIG_LW" user.email "$LUNAR_EMAIL"
+git config --file "$GITCONFIG_LW" user.signingkey "${SSH_KEY_PATH}.pub"
+git config --file "$GITCONFIG_LW" commit.gpgsign true
+git config --file "$GITCONFIG_LW" gpg.format ssh
 
 ok "Created $GITCONFIG_LW (identity + signed commits)"
 
