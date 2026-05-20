@@ -1,5 +1,5 @@
 plan: false
 vars:
   service: lw-zsh-install
-  squad: esa
+  squad: dark-matter
   domain: developer-productivity
