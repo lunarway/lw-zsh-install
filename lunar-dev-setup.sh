@@ -10,6 +10,9 @@
 #   Or if you have the file locally:
 #     zsh lunar-dev-setup.sh
 #
+#   Check an existing setup without changing anything:
+#     zsh lunar-dev-setup.sh --doctor
+#
 #   This script is idempotent — safe to run multiple times.
 #   It will skip steps that are already completed.
 #
@@ -41,6 +44,91 @@ pause_for_user() {
   echo "  ${YELLOW}▸ Press Enter when you have completed the step above...${NC}"
   read -r
 }
+
+# ---------------------------------------------------------------------------
+# Doctor mode — diagnose an existing setup, change nothing
+#
+#   zsh lunar-dev-setup.sh --doctor
+#
+# For each broken check it explains what the component is for and how to fix
+# it, so the setup stays debuggable months after onboarding.
+# ---------------------------------------------------------------------------
+if [[ "${1:-}" == "--doctor" || "${1:-}" == "doctor" ]]; then
+  DR_FAIL=0
+
+  dr() { # dr <label> <check-command> <fix-hint>
+    if eval "$2" &>/dev/null; then
+      ok "$1"
+    else
+      fail "$1"
+      echo "       ${BOLD}fix:${NC} $3"
+      DR_FAIL=$((DR_FAIL + 1))
+    fi
+  }
+
+  echo ""
+  echo "${BOLD}============================================${NC}"
+  echo "${BOLD}  Lunar dev setup — doctor${NC}"
+  echo "${BOLD}============================================${NC}"
+  info "Read-only: checks your setup and explains how to repair it."
+  info "Re-running the setup script fixes most issues automatically (it is idempotent)."
+
+  step "Core tooling (installed via Homebrew)"
+  dr "Homebrew" "command -v brew" \
+    "install from https://brew.sh — everything else at Lunar is installed through it"
+  dr "git" "command -v git" "brew install git"
+  dr "GitHub CLI (gh)" "command -v gh" "brew install gh"
+  dr "Go (Lunar's primary language)" "command -v go" "brew install go"
+
+  step "GitHub access"
+  dr "gh authenticated" "gh auth status" \
+    "gh auth login --hostname github.com --git-protocol ssh --skip-ssh-key --web"
+  dr "SSH key file (~/.ssh/github)" "test -f $HOME/.ssh/github" \
+    "re-run the setup script — it generates the key pair (no passphrase, needed for shuttle Docker builds)"
+  dr "SSH config has a github.com entry" "grep -q 'Host github.com' $HOME/.ssh/config" \
+    "re-run the setup script to write ~/.ssh/config"
+  dr "SSH to GitHub works" \
+    "ssh -T -o StrictHostKeyChecking=accept-new git@github.com 2>&1 | grep -q '^Hi '" \
+    "authorize BOTH keys for SSO at https://github.com/settings/keys (Configure SSO → lunarway), unlock 1Password, or ssh-add ~/.ssh/github"
+
+  step "Git identity & signed commits"
+  dr "~/.gitconfig_lw exists" "test -f $HOME/.gitconfig_lw" \
+    "re-run the setup script — it writes your identity + SSH commit signing config"
+  dr "commit signing enabled for Lunar repos" \
+    "git config --file $HOME/.gitconfig_lw --get commit.gpgsign | grep -q true" \
+    "re-run the setup script; Lunar requires signed commits on all repos"
+  dr "~/.gitconfig includes the Lunar config" "grep -q 'gitconfig_lw' $HOME/.gitconfig" \
+    "re-run the setup script — it adds includeIf entries for ~/lunar and ~/go/src/github.com/lunarway"
+
+  step "Lunar tools (installed via lw-zsh)"
+  dr "lw-zsh installed" "test -d $HOME/.zplug/repos/lunarway/lw-zsh" \
+    "re-run the setup script, or see https://github.com/lunarway/lw-zsh-install"
+  dr "shuttle (build/task runner) in PATH" "command -v shuttle" \
+    "open a NEW terminal (lw-zsh activates tools in fresh shells); if still missing, re-run the setup script"
+  dr "hamctl (release CLI) in PATH" "command -v hamctl" \
+    "open a NEW terminal; afterwards run 'hamctl login' to authenticate via Okta"
+  dr "lunarctl (platform CLI) in PATH" "command -v lunarctl" \
+    "open a NEW terminal; then 'lunarctl agent skills doctor' checks the AI skills setup"
+
+  step "Optional"
+  if [[ -S "${HOME}/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock" ]]; then
+    ok "1Password SSH agent running"
+  else
+    warn "1Password SSH agent not detected (optional but recommended)"
+    echo "       ${BOLD}fix:${NC} 1Password → Settings → Developer → enable 'Use the SSH Agent'"
+  fi
+
+  echo ""
+  if [[ $DR_FAIL -eq 0 ]]; then
+    echo "${GREEN}${BOLD}  All checks passed — your setup is healthy.${NC}"
+  else
+    echo "${YELLOW}${BOLD}  $DR_FAIL issue(s) found.${NC} Apply the fixes above, or re-run the"
+    echo "  setup script — it is idempotent and only touches what is broken."
+    echo "  Still stuck? Ask in ${BOLD}#empower${NC} on Slack."
+  fi
+  echo ""
+  exit $(( DR_FAIL > 0 ))
+fi
 
 # ---------------------------------------------------------------------------
 # Phase 0 — Collect developer info
@@ -83,8 +171,12 @@ if [[ "$(uname -m)" == "arm64" ]]; then
     ok "Rosetta 2 already installed"
   else
     info "Installing Rosetta 2 (needed for some Lunar tools)..."
-    softwareupdate --install-rosetta --agree-to-license 2>/dev/null
-    ok "Rosetta 2 installed"
+    if softwareupdate --install-rosetta --agree-to-license; then
+      ok "Rosetta 2 installed"
+    else
+      warn "Rosetta 2 install failed (may need admin rights)."
+      manual "Run 'softwareupdate --install-rosetta --agree-to-license' later — setup continues."
+    fi
   fi
 fi
 
@@ -102,6 +194,7 @@ else
     echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
   elif [[ -f /usr/local/bin/brew ]]; then
     eval "$(/usr/local/bin/brew shellenv)"
+    echo 'eval "$(/usr/local/bin/brew shellenv)"' >> ~/.zprofile
   fi
   ok "Homebrew installed"
 fi
@@ -237,21 +330,23 @@ ok "Git configured to use SSH for GitHub"
 # ---------------------------------------------------------------------------
 step "Phase 5/10 — Upload SSH key to GitHub"
 
-# Check if our specific key is already on GitHub (match by fingerprint AND type)
-KEY_FINGERPRINT=$(ssh-keygen -lf "${SSH_KEY_PATH}.pub" 2>/dev/null | awk '{print $2}')
+# Check if our specific key is already on GitHub (match by key material AND type).
+# `gh ssh-key list` prints the public key blob, not the SHA256 fingerprint, so we
+# must compare on the base64 key material.
+KEY_BLOB=$(awk '{print $2}' "${SSH_KEY_PATH}.pub" 2>/dev/null)
 EXISTING_KEYS=$(gh ssh-key list 2>/dev/null || echo "")
 
-if [[ -z "$KEY_FINGERPRINT" ]]; then
-  warn "Could not read SSH public key fingerprint from ${SSH_KEY_PATH}.pub"
+if [[ -z "$KEY_BLOB" ]]; then
+  warn "Could not read SSH public key from ${SSH_KEY_PATH}.pub"
   warn "Skipping key upload — generate or fix the key and re-run."
 else
   # Check auth and signing keys separately so a partial upload is recovered
   HAS_AUTH_KEY=false
   HAS_SIGN_KEY=false
-  if echo "$EXISTING_KEYS" | grep -q "$KEY_FINGERPRINT.*authentication"; then
+  if echo "$EXISTING_KEYS" | grep -F "$KEY_BLOB" | grep -q "authentication"; then
     HAS_AUTH_KEY=true
   fi
-  if echo "$EXISTING_KEYS" | grep -q "$KEY_FINGERPRINT.*signing"; then
+  if echo "$EXISTING_KEYS" | grep -F "$KEY_BLOB" | grep -q "signing"; then
     HAS_SIGN_KEY=true
   fi
 
@@ -273,10 +368,12 @@ else
 fi
 
 # --- SSO Authorization (CANNOT be automated) ---
-# Skip if SSH already works (keys already authorized from a previous run)
-SSH_PRE_CHECK=$(ssh -T git@github.com 2>&1 || true)
-if [[ "$SSH_PRE_CHECK" =~ "^Hi " ]]; then
-  GITHUB_USER=$(echo "$SSH_PRE_CHECK" | sed 's/Hi \(.*\)!.*/\1/')
+# Skip if SSH already works (keys already authorized from a previous run).
+# accept-new: on a fresh machine the host-key prompt would otherwise be captured
+# by the command substitution and the script would appear to hang.
+SSH_PRE_CHECK=$(ssh -T -o StrictHostKeyChecking=accept-new git@github.com 2>&1 || true)
+if echo "$SSH_PRE_CHECK" | grep -q '^Hi '; then
+  GITHUB_USER=$(echo "$SSH_PRE_CHECK" | sed -n 's/^Hi \(.*\)! You.*/\1/p' | head -1)
   ok "SSH already works — authenticated as $GITHUB_USER, skipping SSO step"
 else
   echo ""
@@ -299,9 +396,9 @@ else
 
   # Verify SSH access after user completes SSO
   info "Verifying SSH access to GitHub..."
-  SSH_TEST=$(ssh -T git@github.com 2>&1 || true)
-  if [[ "$SSH_TEST" =~ "^Hi " ]]; then
-    GITHUB_USER=$(echo "$SSH_TEST" | sed 's/Hi \(.*\)!.*/\1/')
+  SSH_TEST=$(ssh -T -o StrictHostKeyChecking=accept-new git@github.com 2>&1 || true)
+  if echo "$SSH_TEST" | grep -q '^Hi '; then
+    GITHUB_USER=$(echo "$SSH_TEST" | sed -n 's/^Hi \(.*\)! You.*/\1/p' | head -1)
     ok "SSH works — authenticated as $GITHUB_USER"
   else
     fail "SSH to GitHub failed. Output: $SSH_TEST"
@@ -336,7 +433,10 @@ else
   # and fails silently in non-interactive shells. Cloning directly is reliable.
   if [[ ! -f "$HOME/.zplug/init.zsh" ]]; then
     info "Installing zplug..."
-    git clone https://github.com/zplug/zplug.git "$HOME/.zplug" 2>&1 || true
+    # GIT_CONFIG_GLOBAL=/dev/null: keep this public HTTPS clone immune to the
+    # global insteadOf SSH rewrite from Phase 4 — it must work even when the
+    # user's SSH/SSO setup is incomplete.
+    GIT_CONFIG_GLOBAL=/dev/null git clone https://github.com/zplug/zplug.git "$HOME/.zplug" 2>&1 || true
     if [[ -f "$HOME/.zplug/init.zsh" ]]; then
       ok "zplug installed"
     else
@@ -510,7 +610,7 @@ check "Homebrew"      "command -v brew"
 check "Git"           "command -v git"
 check "GitHub CLI"    "gh auth status"
 check "Go"            "command -v go"
-check "SSH to GitHub" "ssh -T git@github.com 2>&1 | grep -q '^Hi '"
+check "SSH to GitHub" "ssh -T -o StrictHostKeyChecking=accept-new git@github.com 2>&1 | grep -q '^Hi '"
 check "SSH key file"  "test -f $SSH_KEY_PATH"
 check "gitconfig_lw"  "test -f $HOME/.gitconfig_lw"
 check "lw-zsh"        "test -d $HOME/.zplug/repos/lunarway/lw-zsh"
@@ -553,6 +653,11 @@ if ! $HAS_1PASSWORD_AGENT; then
   echo ""
 fi
 
+echo "  ${BOLD}Recommended reading (5 min) — what you just installed and why:${NC}"
+echo "    ${BLUE}https://github.com/lunarway/lw-zsh-install/blob/master/WHAT-YOU-JUST-INSTALLED.md${NC}"
+echo ""
+echo "  If anything breaks later: ${BLUE}zsh lunar-dev-setup.sh --doctor${NC}"
+echo ""
 echo "  ${BOLD}Resources:${NC}"
 echo "    Backstage:  ${BLUE}https://backstage.lunar.tech${NC}"
 echo "    Help:       ${BLUE}#empower${NC} on Slack"
