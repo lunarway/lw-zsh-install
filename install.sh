@@ -14,31 +14,25 @@ else
 fi
 
 # we expect some version of zsh is installed
-if [ -z "$ZPLUG_HOME" ]; then
-    echo "Installing zplug"
-    curl -sL --proto-redir -all,https https://raw.githubusercontent.com/zplug/installer/master/installer.zsh | zsh
+if [ ! -f $HOME/.zinit/bin/zinit.zsh ]; then
+    echo "Installing zinit"
+    git clone https://github.com/zdharma-continuum/zinit.git $HOME/.zinit/bin
     if [ $? != 0 ]; then
-        echo "Failed to install zplug"
+        echo "Failed to install zinit"
         return
     fi
 else
-    echo "Updating zplug"
-    (cd $ZPLUG_HOME && git reset --hard && git pull --ff-only)
+    echo "Updating zinit"
+    (cd $HOME/.zinit/bin && git reset --hard && git pull --ff-only)
     if [ $? != 0 ]; then
-        echo "Failed to update zplug installation"
+        echo "Failed to update zinit installation"
         return
     fi
 fi
 
-# installation of zplug can be delayed so we wait here until we are sure the
-# init.zsh file exists
-while [ ! -f $HOME/.zplug/init.zsh ]; do
-    sleep 1
-done
-
 echo ""
-echo "Loading zplug"
-source $HOME/.zplug/init.zsh
+echo "Loading zinit"
+source $HOME/.zinit/bin/zinit.zsh
 if [ $? != 0 ]; then
     echo "Failed to load"
     return
@@ -46,37 +40,28 @@ fi
 echo ""
 echo "Installing lw-zsh"
 
-ZPLUG_PROTOCOL=ssh
 export LC_ALL= && export LANG=en_US.UTF-8
 
-zplug "lunarway/lw-zsh"
-if [ $? != 0 ]; then
-    echo "Failed to register lw-zsh zplug package"
-    return
-fi
-
-if [ ! -d $HOME/.zplug/repos/lunarway/lw-zsh ]; then
-    zplug install
+if [ ! -d $HOME/.zinit/plugins/lunarway---lw-zsh ]; then
+    zinit load "ssh://git@github.com/lunarway/lw-zsh"
     if [ $? != 0 ]; then
-        echo "Failed to install zplug packages"
+        echo "Failed to install lw-zsh zinit package"
         return
     fi
 else
-    zplug update lunarway/lw-zsh
+    zinit update lunarway/lw-zsh
     if [ $? != 0 ]; then
-        echo "Failed to update lw-zsh zplug package"
+        echo "Failed to update lw-zsh zinit package"
         return
     fi
 fi
 echo ""
 echo "Installing default plugins"
-source $HOME/.zplug/repos/lunarway/lw-zsh/default-plugins.zsh
+source $HOME/.zinit/plugins/lunarway---lw-zsh/default-plugins.zsh
 if [ $? != 0 ]; then
     echo "Failed to register lw-zsh default packages"
     return
 fi
-
-zplug install
 
 # Backup existing .zshrc if it exists
 if [ -f $HOME/.zshrc ]; then
@@ -91,7 +76,7 @@ fi
 
 echo ""
 echo "Generating new .zshrc"
-cp $HOME/.zplug/repos/lunarway/lw-zsh/.zshrc.example $HOME/.zshrc
+cp $HOME/.zinit/plugins/lunarway---lw-zsh/.zshrc.example $HOME/.zshrc
 
 vared -p "Please specify your Lunar email: " -c email
 sed -i '' "s/your-initials@lunarway.com/$email/g" $HOME/.zshrc
